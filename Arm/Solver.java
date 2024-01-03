@@ -7,10 +7,8 @@ public class Solver {
 
   public static void main(String[] args) {
     double[][][] matrix = new double[360][1000][2];
-    ArmFeedforward ff =
-        new ArmFeedforward(0.0, 0.13, 0.53 * (Math.PI / 180), 0.0); // TODO tune
+    ArmFeedforward ff = new ArmFeedforward(0.2, 1.0, 6.0, 1.0); // TODO tune
 
-    // iterate
     for (int start = matrix.length - 1; start >= 0; start--) {
       for (int end = 0; end < matrix[start].length; end++) {
         searchV2(ff, start, end, matrix);
@@ -45,8 +43,7 @@ public class Solver {
     double foundV = 0;
     int fastestCounter = Integer.MAX_VALUE;
 
-    for (double tempA = _configuredMaxA; tempA > 0.0;
-         tempA -= 0.1) { // start from higher vals bc more efficient
+    for (double tempA = _configuredMaxA; tempA > 0.0; tempA -= 0.1) {
       for (double tempMaxV = _configuredMaxV; tempMaxV > 0.0; tempMaxV -= 0.1) {
         double curV = 0;
         double curPos = start;
@@ -60,45 +57,44 @@ public class Solver {
             break;
           }
 
-          // update our position and velo
+          // update position and velo
           curV = Math.min(curV + (tempA * 0.02),
-                          tempMaxV); // ensure doesn't go above tempMaxV
+                          tempMaxV); 
           curPos += curV * 0.02;
           counter++;
           if (counter * 2 > fastestCounter) {
             break;
           }
         }
-
         if (curV < tempMaxV) {
           continue;
         }
 
-        // check when should decel
-        double decelPos = mustDecelBeforePos(curV, tempA, end);
-        double accelDecelDuration = counter;
+        // check at what position need to deccel
+        double deccelPos = mustDeccelBeforePos(curV, tempA, end);
+        double accelDeccelDuration = counter;
 
-        if (curPos > decelPos) {
+        if (curPos > deccelPos) {
           // never hit max velocity
           continue;
         }
-        while (curPos < decelPos) {
+        while (curPos < deccelPos) {
           // check voltage constraints
           if (ff.maxAchievableVelocity(12, curPos, 0.0) < tempMaxV) {
             break;
           }
-          // update our position
+          // update position
           curPos += curV * 0.02;
           counter++;
-          if (counter + accelDecelDuration > fastestCounter) {
+          if (counter + accelDeccelDuration > fastestCounter) {
             break;
           }
         }
-        if (curPos < decelPos) {
+        if (curPos < deccelPos) {
           continue;
         }
 
-        // decel to 0
+        // deccel to 0
         while (curV > 0) {
           // check if in a legal state
           if (ff.minAchievableAcceleration(12, curPos, curV) > -tempA ||
@@ -106,8 +102,9 @@ public class Solver {
             break;
           }
 
-          // update our position and velo
-          curV = Math.max(curV - (tempA * 0.02), 0.0);
+          // update position and velo
+          curV = Math.max(curV - (tempA * 0.02),
+                          0.0); 
           curPos += curV * 0.02;
           counter++;
           if (counter > fastestCounter) {
@@ -131,7 +128,6 @@ public class Solver {
 
   static public void searchV2(ArmFeedforward ff, int start, int end,
                               double[][][] resultMatrix) {
-
     double foundA = 0;
     double foundV = 0;
     double fastest = Double.MAX_VALUE;
@@ -142,7 +138,7 @@ public class Solver {
     }
     double startA = _configuredMaxA;
     double startV = _configuredMaxV;
-
+    
     // use knowledge from previous path
     if (end != 0) {
       startA = resultMatrix[start][end - 1][1];
@@ -161,7 +157,8 @@ public class Solver {
         TrapezoidProfile.State init = new TrapezoidProfile.State(start, 0.0);
         TrapezoidProfile trapezoidProfile =
             new TrapezoidProfile(constraint, goal, init);
-        // equal to bc good if time is same but accel is lower 
+
+        // good if time is same but accel is lower
         if (trapezoidProfile.totalTime() >= fastest) {
           continue;
         }
@@ -171,7 +168,8 @@ public class Solver {
         for (double time = 0.0; time <= trapezoidProfile.totalTime();
              time += 0.02) {
           TrapezoidProfile.State current = trapezoidProfile.calculate(time);
-          double curA = current.velocity - prev.velocity; 
+          double curA =
+              current.velocity - prev.velocity; 
 
           if (ff.maxAchievableAcceleration(12, current.position,
                                            current.velocity) < curA ||
@@ -198,19 +196,19 @@ public class Solver {
     resultMatrix[start][end][1] = foundA;
   }
 
-  public double mustDecelBeforePos(double plateauV, double accel,
+  public double mustDeccelBeforePos(double plateauV, double accel,
                                     double targetPos) {
-
-    double num20MSCycles =
-        Math.ceil(50.0 * plateauV / accel); // don't want partial cycle
+    double num20MSCycles = Math.ceil(
+        50.0 * plateauV / accel); // don't want partial cycle
 
     double dist = (0.0 + plateauV) * 0.02 * num20MSCycles /
                   2.0; // dist travelled to get to plateau
 
-    return targetPos - dist;
+    return targetPos -
+        dist; 
   }
 
-  public boolean canDecel(double curPos, double curV, double accel,
+  public boolean canDeccel(double curPos, double curV, double accel,
                            double targetPos) {
     while (true) {
       curPos += curV * 0.02;
@@ -222,7 +220,7 @@ public class Solver {
         return false;
       }
     }
-  }
+  } 
 
   // Copyright (c) FIRST and other WPILib contributors.
   // Open Source Software; you can modify and/or share it under the terms of
@@ -435,7 +433,7 @@ public class Solver {
 
     private double m_endAccel;
     private double m_endFullSpeed;
-    private double m_endDecel;
+    private double m_endDeccel;
 
     public static class Constraints {
       public final double maxVelocity;
@@ -533,7 +531,7 @@ public class Solver {
 
       m_endAccel = accelerationTime - cutoffBegin;
       m_endFullSpeed = m_endAccel + fullSpeedDist / m_constraints.maxVelocity;
-      m_endDecel = m_endFullSpeed + accelerationTime - cutoffEnd;
+      m_endDeccel = m_endFullSpeed + accelerationTime - cutoffEnd;
     }
 
     /**
@@ -566,10 +564,10 @@ public class Solver {
                             m_endAccel * m_constraints.maxAcceleration / 2.0) *
                                m_endAccel +
                            m_constraints.maxVelocity * (t - m_endAccel);
-      } else if (t <= m_endDecel) {
+      } else if (t <= m_endDeccel) {
         result.velocity =
-            m_goal.velocity + (m_endDecel - t) * m_constraints.maxAcceleration;
-        double timeLeft = m_endDecel - t;
+            m_goal.velocity + (m_endDeccel - t) * m_constraints.maxAcceleration;
+        double timeLeft = m_endDeccel - t;
         result.position =
             m_goal.position -
             (m_goal.velocity + timeLeft * m_constraints.maxAcceleration / 2.0) *
@@ -604,7 +602,7 @@ public class Solver {
       endFullSpeed = Math.max(endFullSpeed, 0);
 
       final double acceleration = m_constraints.maxAcceleration;
-      final double deceleration = -m_constraints.maxAcceleration;
+      final double decceleration = -m_constraints.maxAcceleration;
 
       double distToTarget = Math.abs(target - position);
       if (distToTarget < 1e-6) {
@@ -614,26 +612,26 @@ public class Solver {
       double accelDist =
           velocity * endAccel + 0.5 * acceleration * endAccel * endAccel;
 
-      double decelVelocity;
+      double deccelVelocity;
       if (endAccel > 0) {
-        decelVelocity = Math.sqrt(
+        deccelVelocity = Math.sqrt(
             Math.abs(velocity * velocity + 2 * acceleration * accelDist));
       } else {
-        decelVelocity = velocity;
+        deccelVelocity = velocity;
       }
 
       double fullSpeedDist = m_constraints.maxVelocity * endFullSpeed;
-      double decelDist;
+      double deccelDist;
 
       if (accelDist > distToTarget) {
         accelDist = distToTarget;
         fullSpeedDist = 0;
-        decelDist = 0;
+        deccelDist = 0;
       } else if (accelDist + fullSpeedDist > distToTarget) {
         fullSpeedDist = distToTarget - accelDist;
-        decelDist = 0;
+        deccelDist = 0;
       } else {
-        decelDist = distToTarget - fullSpeedDist - accelDist;
+        deccelDist = distToTarget - fullSpeedDist - accelDist;
       }
 
       double accelTime =
@@ -641,15 +639,15 @@ public class Solver {
                                           2 * acceleration * accelDist))) /
           acceleration;
 
-      double decelTime =
-          (-decelVelocity +
-           Math.sqrt(Math.abs(decelVelocity * decelVelocity +
-                              2 * deceleration * decelDist))) /
-          deceleration;
+      double deccelTime =
+          (-deccelVelocity +
+           Math.sqrt(Math.abs(deccelVelocity * deccelVelocity +
+                              2 * decceleration * deccelDist))) /
+          decceleration;
 
       double fullSpeedTime = fullSpeedDist / m_constraints.maxVelocity;
 
-      return accelTime + fullSpeedTime + decelTime;
+      return accelTime + fullSpeedTime + deccelTime;
     }
 
     /**
@@ -657,7 +655,7 @@ public class Solver {
      *
      * @return The total time the profile takes to reach the goal.
      */
-    public double totalTime() { return m_endDecel; }
+    public double totalTime() { return m_endDeccel; }
 
     /**
      * Returns true if the profile has reached the goal.
