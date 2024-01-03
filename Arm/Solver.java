@@ -6,13 +6,12 @@ public class Solver {
   private static double _configuredMaxV = 180; // degs per second
 
   public static void main(String[] args) {
-    double[][][] matrix = new double[360][1000][2];             // HUH why 1000
-    ArmFeedforward ff = new ArmFeedforward(0.2, 1.0, 6.0, 1.0); // TODO tune
-    // 0.2 / 360.0, 1.0 / 360.0, 6.0 / 360.0, 1.0 / 360.0)
+    double[][][] matrix = new double[360][1000][2];
+    ArmFeedforward ff =
+        new ArmFeedforward(0.0, 0.13, 0.53 * (Math.PI / 180), 0.0); // TODO tune
 
     // iterate
     for (int start = matrix.length - 1; start >= 0; start--) {
-      // for (int start = 150; start < 160; start++) {
       for (int end = 0; end < matrix[start].length; end++) {
         searchV2(ff, start, end, matrix);
         System.out.println(end + " column finished");
@@ -25,7 +24,6 @@ public class Solver {
       PrintWriter kinematicLimitsFile =
           new PrintWriter("armKinematicLimits.csv");
 
-      // don't change
       for (int i = 0; i < matrix.length; i++) {
         for (int j = 0; j < matrix[i].length; j++) {
           for (int k = 0; k < matrix[i][j].length; k++) {
@@ -35,79 +33,12 @@ public class Solver {
         kinematicLimitsFile.println();
       }
 
-      for (int k = 0; k < matrix[i][j].length; k++) {
-        for (int i = 0; i < matrix.length; i++) {
-          for (int j = 0; j < matrix[i].length; j++) {
-            kinematicLimitsFile.print(
-                matrix[i][j][k] +
-                ","); // HUH why need extra comma? (not added here)
-          }
-        }
-        kinematicLimitsFile.println();
-      }
-
-      kinematicLimitsFile.close(); // saves
+      kinematicLimitsFile.close();
     } catch (Exception e) {
-      // TODO Auto-generated catch block
       e.printStackTrace();
     }
   }
 
-  // max velocity + accel capped by the physical limits of arm
-  // normalize to 12v
-  // we can configure a max, but what if we want to get a theoretical max velo
-  // and accel FF = kA * desired accel +  kV * desired velocity + kS +/- kG *
-  // sin theta (aka arm angle) 12v = kA * desired accel +  kV * desired velocity
-  // + kS +/- kG * sin theta (aka arm angle) if dAccel == 0 ==> 12v = kV *
-  // desired velocity + kS +/- kG * sin theta (aka arm angle) 12v = kV * r + kS
-  // + kG * sin theta (aka arm angle) radius of circle (polar graph) = desired
-  // velo r = (12 - (kS + kG * sin theta)) / kV find min of all r Trapezoidal
-  // anomolies -- if FF > 12v we have a problem assume max V is configured 12v =
-  // kA * r + kV * configured max V + kS +/- kG * sin theta (aka arm angle) find
-  // min of all r to give our new configuration
-  // ^^ the above process finds safe values for any rotation
-  // the min safe for anything is the max safe for everything
-  // p1 to p2 (angles)
-  // max A along that path (assume max v is still configured)
-
-  // // assume both maxA func is pre implemented
-  // public double maxPosA(double theta) {
-  //   // ff is in here
-  //   return 0;
-  // }
-  // public double maxNegA(double theta) {
-  //   // ff is in here
-  //   return 0;
-  // }
-  // assume moving upwards (pos direction)
-  // https://github.wpilib.org/allwpilib/docs/release/java/edu/wpi/first/math/controller/ArmFeedforward.html
-  // public double sophiesLimitFinder(ArmFeedforward ff, double currentAngle,
-  // double targetAngle)
-  // {
-  //   double min = Double.MAX_VALUE;
-  //   for (int i = (int) currentAngle; i <= (int) targetAngle; i++) {
-  //     min = Math.min(min, ff.maxAchievableAcceleration(12.0, i,
-  //     constantConfiguredVelocity));
-  //   }
-  //   return min;
-  // }
-  // this approach assumes a statically configured max V
-
-  // lets optimize
-  // lets create our own profiles dynamically with no max V
-  // lets find an optimal trapezoidal profile s.t.
-  // 1. it's actually trapezoidal (smooth accel deccel)
-  // 2. dynamic max velocity is respected (the arm moves as fast as possible
-  // while not exceeding a configured max velocity)
-  // 3. dynamic max accel is respected (does not exceed 12v but accels as fast
-  // as possible while not exceeding max accel) global consts -- configured max
-  // velo and accel, kS, kG, kA, kV 360 x 360 x 2 matrix [start angle][target
-  // angle] {max v, max a}
-
-  // do the matrix calculation externally--then load in
-  // clean up
-
-  // TODO run this to see if works
   public void stupidSearch(Double[][][] resultMatrix, ArmFeedforward ff,
                            int start, int end) {
     double foundA = 0;
@@ -115,82 +46,68 @@ public class Solver {
     int fastestCounter = Integer.MAX_VALUE;
 
     for (double tempA = _configuredMaxA; tempA > 0.0;
-         tempA -=
-         0.1) { // start incrementing from configuredmax not 0 bc we know those
-                // higher vals will likely yield faster time--more efficient
+         tempA -= 0.1) { // start from higher vals bc more efficient
       for (double tempMaxV = _configuredMaxV; tempMaxV > 0.0; tempMaxV -= 0.1) {
-        // how fast does this A get us there while not exceeding 12v
         double curV = 0;
         double curPos = start;
         int counter = 0;
 
-        // simulating our robot periodic while accelerating
+        // simulating robot periodic while accelerating
         while (curV < tempMaxV) {
-          // check if we are in a legal state
-          // is our desired acceleration possible?
+          // check if in a legal state
           if ((ff.maxAchievableAcceleration(12, curPos, curV) < tempA) ||
               (ff.maxAchievableVelocity(12, curPos, tempA) < tempMaxV)) {
             break;
           }
 
-          // update our psoition and velo
+          // update our position and velo
           curV = Math.min(curV + (tempA * 0.02),
-                          tempMaxV); // ensure it doens't go above tempMaxV
+                          tempMaxV); // ensure doesn't go above tempMaxV
           curPos += curV * 0.02;
           counter++;
           if (counter * 2 > fastestCounter) {
             break;
           }
         }
-        // we hit one of the 2 breaks above
-        if (curV < tempMaxV) { // HUH why isn't it greater than? o bc if u hit
-                               // this and this condition still holds true, mean
-                               // u broke out of while loop
-          continue; // so while loop condition might still be true but we want
-                    // to continue w the for loop
+
+        if (curV < tempMaxV) {
+          continue;
         }
 
-        // plateau (how long do we maintain the velocity for?)
-        // aka When should we start decellerating?
-        // write external helper func called canDeccel to 0 before target
-        double deccelPos = mustDeccelBeforePos(curV, tempA, end);
-        double accelDeccelDuration = counter;
-        // deccelTime (when it will start decelerating)
-        // if (deccelTime + accelDeccelDuration > fastestCounter) {continue;}
-        if (curPos > deccelPos) {
+        // check when should decel
+        double decelPos = mustDecelBeforePos(curV, tempA, end);
+        double accelDecelDuration = counter;
+
+        if (curPos > decelPos) {
           // never hit max velocity
-          continue; // not break bc not in while loop
+          continue;
         }
-        while (curPos < deccelPos) {
+        while (curPos < decelPos) {
           // check voltage constraints
           if (ff.maxAchievableVelocity(12, curPos, 0.0) < tempMaxV) {
             break;
           }
-          // update our psoition
+          // update our position
           curPos += curV * 0.02;
           counter++;
-          if (counter + accelDeccelDuration >
-              fastestCounter) { // HUH shouldnt counter be double?
+          if (counter + accelDecelDuration > fastestCounter) {
             break;
           }
         }
-        if (curPos < deccelPos) {
+        if (curPos < decelPos) {
           continue;
         }
 
         // decel to 0
         while (curV > 0) {
-          // check if we are in a legal state
-          // is our desired acceleration possible?
-          // maintaining our velocity possible?
+          // check if in a legal state
           if (ff.minAchievableAcceleration(12, curPos, curV) > -tempA ||
               ff.maxAchievableVelocity(12, curPos, -tempA) < tempMaxV) {
             break;
           }
 
-          // update our psoition and velo
-          curV = Math.max(curV - (tempA * 0.02),
-                          0.0); // ensures doesn't go below 0
+          // update our position and velo
+          curV = Math.max(curV - (tempA * 0.02), 0.0);
           curPos += curV * 0.02;
           counter++;
           if (counter > fastestCounter) {
@@ -212,16 +129,9 @@ public class Solver {
     resultMatrix[start][end][1] = foundA;
   }
 
-  // public void eg(double a, Double b) {
-  //   a = 12;
-  //   b.value = 12;
-  // }
-
   static public void searchV2(ArmFeedforward ff, int start, int end,
                               double[][][] resultMatrix) {
-    // if(end == 0) then we have to use the 0 for found AV and the configured
-    // values for temp AV in the for loop otherwise we can use double[start][end
-    // - 1] as the start points for our search use knowledge from previous path
+
     double foundA = 0;
     double foundV = 0;
     double fastest = Double.MAX_VALUE;
@@ -232,6 +142,8 @@ public class Solver {
     }
     double startA = _configuredMaxA;
     double startV = _configuredMaxV;
+
+    // use knowledge from previous path
     if (end != 0) {
       startA = resultMatrix[start][end - 1][1];
       startV = resultMatrix[start][end - 1][0];
@@ -249,52 +161,18 @@ public class Solver {
         TrapezoidProfile.State init = new TrapezoidProfile.State(start, 0.0);
         TrapezoidProfile trapezoidProfile =
             new TrapezoidProfile(constraint, goal, init);
-        // equal to bc fine if time is same but accel is lower (is actively
-        // desired)
+        // equal to bc good if time is same but accel is lower 
         if (trapezoidProfile.totalTime() >= fastest) {
           continue;
         }
         TrapezoidProfile.State prev = trapezoidProfile.calculate(0.0);
         boolean legal = true;
 
-        // loop needed
         for (double time = 0.0; time <= trapezoidProfile.totalTime();
              time += 0.02) {
-          // otherwise, lets check that we're in a legal state via ff
           TrapezoidProfile.State current = trapezoidProfile.calculate(time);
-          double curA = current.velocity - prev.velocity; // over time??
+          double curA = current.velocity - prev.velocity; 
 
-          // GOES THROUGH entire profile to make sure this velo and accel r legal throughout
-          // System.out.println("cur accel" + curA);
-          // System.out.println("cur velo" + current.velocity);
-          // System.out.println(
-          //     "max achievable accel"
-          //     + ff.maxAchievableAcceleration(12, current.position,
-          //     current.velocity)
-          //     + (ff.maxAchievableAcceleration(12, current.position,
-          //     current.velocity) < curA)
-          // );
-          // System.out.println(
-          //     "min achievable accel"
-          //     + ff.minAchievableAcceleration(12, current.position,
-          //     current.velocity)
-          //     + (ff.minAchievableAcceleration(12, current.position,
-          //     current.velocity) > curA)
-          // );
-          // System.out.println(
-          //     "max achievable velo"
-          //     + ff.maxAchievableVelocity(12, current.position,
-          //     current.velocity)
-          //     + (ff.maxAchievableVelocity(12, current.position, curA) <
-          //     current.velocity)
-          // );
-          // System.out.println(
-          //     "min achievable velo"
-          //     + ff.minAchievableVelocity(12, current.position,
-          //     current.velocity)
-          //     + (ff.minAchievableVelocity(12, current.position, curA) >
-          //     current.velocity)
-          // );
           if (ff.maxAchievableAcceleration(12, current.position,
                                            current.velocity) < curA ||
               ff.minAchievableAcceleration(12, current.position,
@@ -304,12 +182,10 @@ public class Solver {
               ff.minAchievableVelocity(12, current.position, curA) >
                   current.velocity) {
             legal = false;
-            // System.out.println("illegal");
             break;
           }
           prev = current;
         }
-        // System.out.println("one set of values done");
 
         if (legal) {
           foundA = tempA;
@@ -320,200 +196,21 @@ public class Solver {
     }
     resultMatrix[start][end][0] = foundV;
     resultMatrix[start][end][1] = foundA;
-    // ------------------------------------------------------------------
-    // wonky binary search approach
-
-    // System.out.println("startA" + startA);
-    // System.out.println("startV" + startV);
-
-    // double minA = 0.0;
-    // double maxA = startA;
-
-    // double minV = 0.0;
-    // double maxV = startV;
-
-    // double midA = (minA + maxA) / 2;
-    // double midV = (minV + maxV) / 2;
-
-    // boolean legal = false;
-    // while ((minA < maxA && minV < maxV) && legal == false) {
-    //   // System.out.println("while loop start");
-    //   midA = (minA + maxA) / 2;
-    //   midV = (minV + maxV) / 2;
-    //   // System.out.println("midA" + midA);
-    //   // System.out.println("midV" + midV);
-    //   TrapezoidProfile trapezoidProfile = createTrapezoidProfile(midV, midA,
-    //   end, 0.0, start, 0.0);
-
-    //   // equal to bc fine if time is same but accel is lower (is actively
-    //   desired)
-
-    //   TrapezoidProfile.State prev = trapezoidProfile.calculate(0.0);
-    //   // System.out.println("profile created");
-    //   // loop needed
-    //   // System.out.println("total time" + trapezoidProfile.totalTime());
-
-    //   for (double time = 0.0; time <= trapezoidProfile.totalTime(); time +=
-    //   0.02) {
-    //     // System.out.println("loop started");
-    //     // otherwise, lets check that we're in a leal state via ff
-    //     TrapezoidProfile.State current = trapezoidProfile.calculate(time);
-    //     double curA = current.velocity - prev.velocity;
-    //     if (ff.maxAchievableAcceleration(12, current.position,
-    //     current.velocity) < curA) {
-    //       minA = midA + 0.1;
-    //       // System.out.println("illegal");
-    //       break;
-    //     }
-    //     if (ff.minAchievableAcceleration(12, current.position,
-    //     current.velocity) > curA) {
-    //       maxA = midA - 0.1;
-    //       // System.out.println("illegal");
-    //       break;
-    //     }
-    //     if (ff.maxAchievableVelocity(12, current.position, curA) <
-    //     current.velocity) {
-    //       minV = midV + 0.1;
-    //       // System.out.println("illegal");
-    //       break;
-    //     }
-    //     if (ff.minAchievableVelocity(12, current.position, curA) >
-    //     current.velocity) {
-    //       maxV = midV - 0.1;
-    //       // System.out.println("illegal");
-    //       break;
-    //     }
-    //     if (minA < maxA && minV < maxV) {
-    //       legal = true;
-    //     } else {
-    //       System.out.println("invalid bc min is greater than max");
-    //     }
-    //   }
-    // }
-    // // System.out.println("at second part");
-    // // System.out.println("midA" + midA);
-    // // System.out.println("midV" + midV);
-    // // System.out.println("maxA" + maxA);
-    // // System.out.println("maxV" + maxV);
-    // // forsome reason putting mid a and mid v here result in all 0's printed
-    // out and starta and
-    // // start v being 0 results in things being 0 maybe all of them illegal?
-    // or not fast enough? for (double loopingA = maxA; loopingA >= minA;
-    // loopingA -= 0.1) {
-    //   for (double loopingV = maxV; loopingV >= minV; loopingV -= 0.1) {
-    //     TrapezoidProfile trapezoidProfile2 =
-    //         createTrapezoidProfile(loopingV, loopingA, end, 0.0, start, 0.0);
-
-    //     // equal to bc fine if time is same but accel is lower (is actively
-    //     desired)
-
-    //     if (trapezoidProfile2.totalTime() >= fastest) {
-    //       // System.out.println("not fast enough");
-    //       continue;
-    //     }
-    //     TrapezoidProfile.State prev2 = trapezoidProfile2.calculate(0.0);
-    //     boolean legal2 = true;
-
-    //     // loop needed
-    //     for (double time = 0.0; time <= trapezoidProfile2.totalTime(); time
-    //     += 0.02) {
-    //       // System.out.println("minA" + minA);
-    //       // System.out.println("maxA" + maxA);
-    //       // System.out.println("minV" + minV);
-    //       // System.out.println("maxV" + maxV);
-    //       // System.out.println("midA" + midA);
-    //       // System.out.println("midV" + midV);
-    //       // otherwise, lets check that we're in a legal state via ff
-    //       TrapezoidProfile.State current2 =
-    //       trapezoidProfile2.calculate(time); double curA2 = current2.velocity
-    //       - prev2.velocity; // over time??
-    //       // System.out.println("cur accel" + curA2);
-    //       // System.out.println("cur velo" + current2.velocity);
-    //       if (ff.maxAchievableAcceleration(12, current2.position,
-    //       current2.velocity) < curA2
-    //           || ff.minAchievableAcceleration(12, current2.position,
-    //           current2.velocity) > curA2
-    //           || ff.maxAchievableVelocity(12, current2.position, curA2) <
-    //           current2.velocity
-    //           || ff.minAchievableVelocity(12, current2.position, curA2) >
-    //           current2.velocity) {
-    //         legal2 = false;
-    //         // System.out.println("illegal");
-    //         break;
-    //       }
-    //       prev2 = current2;
-    //     }
-    //     // System.out.println("one set of values done");
-
-    //     if (legal2) {
-    //       foundA = loopingA;
-    //       foundV = loopingV;
-    //       fastest = trapezoidProfile2.totalTime();
-    //     }
-    //   }
-    // }
-    // resultMatrix[start][end][0] = foundV;
-    // resultMatrix[start][end][1] = foundA;
-
-    // // left and right are indices while (left <= right) {
-    // //   int mid = (left + right) / 2;
-    // //   if (x = array[mid]) {
-    // //     return true;
-    // //   } else if (array[n] > mid) {
-    // //     left = mid + 1;
-    // //   } else if (array[n] < mid) {
-    // //     right = mid - 1;
-    // //   }
-    // // }
-    // // }
   }
 
-  public static TrapezoidProfile
-  createTrapezoidProfile(double constraintV, double constraintA, double endPos,
-                         double endVelo, double startPos, double startVelo) {
-    TrapezoidProfile.Constraints constraint =
-        new TrapezoidProfile.Constraints(constraintV, constraintA);
-    TrapezoidProfile.State goal = new TrapezoidProfile.State(endPos, endVelo);
-    TrapezoidProfile.State init =
-        new TrapezoidProfile.State(startPos, startVelo);
-    TrapezoidProfile trapezoidProfile =
-        new TrapezoidProfile(constraint, goal, init);
-    return trapezoidProfile;
-  }
-
-  public double mustDeccelBeforePos(double plateauV, double accel,
+  public double mustDecelBeforePos(double plateauV, double accel,
                                     double targetPos) {
-    // double curV = 0.0;
-    // double curPos = targetPos;
-    // while (curV < plateauV) {
-    //   curV += accel * 0.02;
-    //   curPos -= curV * 0.02;
-    // }
 
-    // how many counts will it take for me to deccel from plateau to 0
-    // y = -accel * x + plateauV
-    // 0 = -accel * x + plateauV
-    // x = plateauV/accel
-    // find x intercept
-
-    // double seconds = plateauV / accel; // round sup to nearest int
-    // double dist = (0.0 + plateauV) *seconds / 2.0;
-    // wrong so changed to below
-
-    double num20MSCycles = Math.ceil(
-        50.0 * plateauV / accel); // round up to nearest cycle bc don't want
-                                  // partial cycle HUH then should be int?
-                                  // times 50 bc divided by .02
+    double num20MSCycles =
+        Math.ceil(50.0 * plateauV / accel); // don't want partial cycle
 
     double dist = (0.0 + plateauV) * 0.02 * num20MSCycles /
                   2.0; // dist travelled to get to plateau
 
-    return targetPos -
-        dist; // HUH doesnt subtract out the plateau dist? o nvm it's total dist
-              // minus dist needed to deccel -> gets us pos to deccel
+    return targetPos - dist;
   }
 
-  public boolean canDeccel(double curPos, double curV, double accel,
+  public boolean canDecel(double curPos, double curV, double accel,
                            double targetPos) {
     while (true) {
       curPos += curV * 0.02;
@@ -525,10 +222,7 @@ public class Solver {
         return false;
       }
     }
-  } // same idea as mustDeccelBeforePos, only that it does the if statement for
-    // us, posing whether or not cur pos is possible to deccel w
-    // HUH logic is weird here--well ig basically if past target pos yet still w
-    // velo, return false (why does it have to be greater than 0 tho?)
+  }
 
   // Copyright (c) FIRST and other WPILib contributors.
   // Open Source Software; you can modify and/or share it under the terms of
@@ -741,7 +435,7 @@ public class Solver {
 
     private double m_endAccel;
     private double m_endFullSpeed;
-    private double m_endDeccel;
+    private double m_endDecel;
 
     public static class Constraints {
       public final double maxVelocity;
@@ -839,7 +533,7 @@ public class Solver {
 
       m_endAccel = accelerationTime - cutoffBegin;
       m_endFullSpeed = m_endAccel + fullSpeedDist / m_constraints.maxVelocity;
-      m_endDeccel = m_endFullSpeed + accelerationTime - cutoffEnd;
+      m_endDecel = m_endFullSpeed + accelerationTime - cutoffEnd;
     }
 
     /**
@@ -872,10 +566,10 @@ public class Solver {
                             m_endAccel * m_constraints.maxAcceleration / 2.0) *
                                m_endAccel +
                            m_constraints.maxVelocity * (t - m_endAccel);
-      } else if (t <= m_endDeccel) {
+      } else if (t <= m_endDecel) {
         result.velocity =
-            m_goal.velocity + (m_endDeccel - t) * m_constraints.maxAcceleration;
-        double timeLeft = m_endDeccel - t;
+            m_goal.velocity + (m_endDecel - t) * m_constraints.maxAcceleration;
+        double timeLeft = m_endDecel - t;
         result.position =
             m_goal.position -
             (m_goal.velocity + timeLeft * m_constraints.maxAcceleration / 2.0) *
@@ -910,7 +604,7 @@ public class Solver {
       endFullSpeed = Math.max(endFullSpeed, 0);
 
       final double acceleration = m_constraints.maxAcceleration;
-      final double decceleration = -m_constraints.maxAcceleration;
+      final double deceleration = -m_constraints.maxAcceleration;
 
       double distToTarget = Math.abs(target - position);
       if (distToTarget < 1e-6) {
@@ -920,26 +614,26 @@ public class Solver {
       double accelDist =
           velocity * endAccel + 0.5 * acceleration * endAccel * endAccel;
 
-      double deccelVelocity;
+      double decelVelocity;
       if (endAccel > 0) {
-        deccelVelocity = Math.sqrt(
+        decelVelocity = Math.sqrt(
             Math.abs(velocity * velocity + 2 * acceleration * accelDist));
       } else {
-        deccelVelocity = velocity;
+        decelVelocity = velocity;
       }
 
       double fullSpeedDist = m_constraints.maxVelocity * endFullSpeed;
-      double deccelDist;
+      double decelDist;
 
       if (accelDist > distToTarget) {
         accelDist = distToTarget;
         fullSpeedDist = 0;
-        deccelDist = 0;
+        decelDist = 0;
       } else if (accelDist + fullSpeedDist > distToTarget) {
         fullSpeedDist = distToTarget - accelDist;
-        deccelDist = 0;
+        decelDist = 0;
       } else {
-        deccelDist = distToTarget - fullSpeedDist - accelDist;
+        decelDist = distToTarget - fullSpeedDist - accelDist;
       }
 
       double accelTime =
@@ -947,15 +641,15 @@ public class Solver {
                                           2 * acceleration * accelDist))) /
           acceleration;
 
-      double deccelTime =
-          (-deccelVelocity +
-           Math.sqrt(Math.abs(deccelVelocity * deccelVelocity +
-                              2 * decceleration * deccelDist))) /
-          decceleration;
+      double decelTime =
+          (-decelVelocity +
+           Math.sqrt(Math.abs(decelVelocity * decelVelocity +
+                              2 * deceleration * decelDist))) /
+          deceleration;
 
       double fullSpeedTime = fullSpeedDist / m_constraints.maxVelocity;
 
-      return accelTime + fullSpeedTime + deccelTime;
+      return accelTime + fullSpeedTime + decelTime;
     }
 
     /**
@@ -963,7 +657,7 @@ public class Solver {
      *
      * @return The total time the profile takes to reach the goal.
      */
-    public double totalTime() { return m_endDeccel; }
+    public double totalTime() { return m_endDecel; }
 
     /**
      * Returns true if the profile has reached the goal.

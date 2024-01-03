@@ -57,6 +57,7 @@ public class Arm extends SubsystemBase {
       System.out.println("ARM Check Init Status : " + counter);
       counter++;
     }
+
     initCanCoderConfigs();
     configArmCanCoder();
     initArmMotor();
