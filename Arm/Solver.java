@@ -1,4 +1,5 @@
 import java.io.PrintWriter;
+import java.util.Arrays;
 import java.util.Objects;
 
 public class Solver {
@@ -6,8 +7,8 @@ public class Solver {
   private static double _configuredMaxV = 180; // degs per second
 
   public static void main(String[] args) {
-    double[][][] matrix = new double[360][1000][2];
-    ArmFeedforward ff = new ArmFeedforward(0.2, 1.0, 6.0, 1.0); // TODO tune
+    double[][][] matrix = new double[360][360][2];
+    ArmFeedforward ff = new ArmFeedforward(0.0, 0.13, 0.53, 1.0); // TODO tune
 
     for (int start = matrix.length - 1; start >= 0; start--) {
       for (int end = 0; end < matrix[start].length; end++) {
@@ -37,7 +38,7 @@ public class Solver {
     }
   }
 
-  public void stupidSearch(Double[][][] resultMatrix, ArmFeedforward ff,
+  public void stupidSearch(double[][][] resultMatrix, ArmFeedforward ff,
                            int start, int end) {
     double foundA = 0;
     double foundV = 0;
@@ -58,8 +59,7 @@ public class Solver {
           }
 
           // update position and velo
-          curV = Math.min(curV + (tempA * 0.02),
-                          tempMaxV); 
+          curV = Math.min(curV + (tempA * 0.02), tempMaxV);
           curPos += curV * 0.02;
           counter++;
           if (counter * 2 > fastestCounter) {
@@ -103,8 +103,7 @@ public class Solver {
           }
 
           // update position and velo
-          curV = Math.max(curV - (tempA * 0.02),
-                          0.0); 
+          curV = Math.max(curV - (tempA * 0.02), 0.0);
           curPos += curV * 0.02;
           counter++;
           if (counter > fastestCounter) {
@@ -138,7 +137,7 @@ public class Solver {
     }
     double startA = _configuredMaxA;
     double startV = _configuredMaxV;
-    
+
     // use knowledge from previous path
     if (end != 0) {
       startA = resultMatrix[start][end - 1][1];
@@ -168,17 +167,20 @@ public class Solver {
         for (double time = 0.0; time <= trapezoidProfile.totalTime();
              time += 0.02) {
           TrapezoidProfile.State current = trapezoidProfile.calculate(time);
-          double curA =
-              current.velocity - prev.velocity; 
+          double curA = (current.velocity - prev.velocity) / 0.02;
 
-          if (ff.maxAchievableAcceleration(12, current.position,
-                                           current.velocity) < curA ||
-              ff.minAchievableAcceleration(12, current.position,
-                                           current.velocity) > curA ||
-              ff.maxAchievableVelocity(12, current.position, curA) <
-                  current.velocity ||
-              ff.minAchievableVelocity(12, current.position, curA) >
-                  current.velocity) {
+          if (Math.toDegrees(ff.maxAchievableAcceleration( // expects radians
+                  12.0, Math.toRadians(current.position),
+                  Math.toRadians(current.velocity))) < curA ||
+              Math.toDegrees(ff.minAchievableAcceleration(
+                  12.0, Math.toRadians(current.position),
+                  Math.toRadians(current.velocity))) > curA ||
+              Math.toDegrees(ff.maxAchievableVelocity(
+                  12.0, Math.toRadians(current.position),
+                  Math.toRadians(curA))) < current.velocity ||
+              Math.toDegrees(ff.minAchievableVelocity(
+                  12.0, Math.toRadians(current.position),
+                  Math.toRadians(curA))) > current.velocity) {
             legal = false;
             break;
           }
@@ -198,14 +200,13 @@ public class Solver {
 
   public double mustDeccelBeforePos(double plateauV, double accel,
                                     double targetPos) {
-    double num20MSCycles = Math.ceil(
-        50.0 * plateauV / accel); // don't want partial cycle
+    double num20MSCycles =
+        Math.ceil(50.0 * plateauV / accel); // don't want partial cycle
 
     double dist = (0.0 + plateauV) * 0.02 * num20MSCycles /
                   2.0; // dist travelled to get to plateau
 
-    return targetPos -
-        dist; 
+    return targetPos - dist;
   }
 
   public boolean canDeccel(double curPos, double curV, double accel,
@@ -220,7 +221,7 @@ public class Solver {
         return false;
       }
     }
-  } 
+  }
 
   // Copyright (c) FIRST and other WPILib contributors.
   // Open Source Software; you can modify and/or share it under the terms of
