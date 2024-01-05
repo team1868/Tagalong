@@ -33,9 +33,9 @@ public class Arm extends SubsystemBase {
   private GenericPublisher _currentTicksEntry, _targetTicksEntry;
   private TrapezoidProfile _profile;
 
-  private ArmFeedforward _armFF =
-      new ArmFeedforward(ArmConfs.ARM_KS_VOLTS, ArmConfs.ARM_KG_VOLTS,
-                         ArmConfs.ARM_KV_VOLTS_DPS, ArmConfs.ARM_KA_VOLTS_DPSQ);
+  private ArmFeedforward _armFF = new ArmFeedforward(
+      ArmConfs.ARM_KS_VOLTS, ArmConfs.ARM_KG_VOLTS, ArmConfs.ARM_KV_VOLTS_RADPS,
+      ArmConfs.ARM_KA_VOLTS_RADPSQ);
   private ArmPositions _goalPosition;
 
   private boolean _followingProfile = false;
@@ -67,34 +67,27 @@ public class Arm extends SubsystemBase {
 
   @Override
   public void periodic() {
-    double falconEncoderPos = CTREConversion.falconToDegrees(
-        (int)_armMotor.getSelectedSensorPosition(), ArmConfs.ARM_GEAR_RATIO);
-    
-    if (Math.abs(falconEncoderPos) > 360) {
-      falconEncoderPos %= 360;
+    double falconPosTicks = _armMotor.getSelectedSensorPosition();
+    if (falconPosTicks >= 65536) {
+      _armMotor.setSelectedSensorPosition(falconPosTicks %= 65536);
     }
-    if (falconEncoderPos < 0) {
-      falconEncoderPos += 360;
+    if (falconPosTicks < 0) {
+      _armMotor.setSelectedSensorPosition(falconPosTicks += 65536);
     }
 
     if (_followingProfile) {
-
-
-      TrapezoidProfile.State goalState = _profile.calculate(
-          _timer.get()); 
+      TrapezoidProfile.State goalState = _profile.calculate(_timer.get());
       double velocityError = goalState.velocity - _prevVelocityDPS;
       _prevVelocityDPS = goalState.velocity;
 
-      double ff = _armFF.calculate(goalState.position, goalState.velocity) /
+      double ff = _armFF.calculate(Math.toRadians(goalState.position),
+                                   Math.toRadians(goalState.velocity)) /
                   12.0; // needs angle zeroed when parallel to ground
-  
+
       _armMotor.set(ControlMode.Position,
                     CTREConversion.degreesToFalcon(goalState.position,
                                                    ArmConfs.ARM_GEAR_RATIO),
                     DemandType.ArbitraryFeedForward, ff);
-      System.out.println(
-          "goal state pos degs" +
-          goalState.position); 
     }
   }
 
@@ -146,8 +139,7 @@ public class Arm extends SubsystemBase {
   public double getPower() { return _armMotor.get(); }
 
   public void initArmMotor() {
-    _armMotorFXConfig.slot0.kP =
-        ArmConfs.ARM_PFAC;
+    _armMotorFXConfig.slot0.kP = ArmConfs.ARM_PFAC;
     _armMotorFXConfig.slot0.kI = ArmConfs.ARM_IFAC;
     _armMotorFXConfig.slot0.kD = ArmConfs.ARM_DFAC;
     _armMotorFXConfig.supplyCurrLimit = new SupplyCurrentLimitConfiguration(
@@ -217,24 +209,19 @@ public class Arm extends SubsystemBase {
     ErrorCode initStatus = _armMotor.configFactoryDefault();
     return initStatus == ErrorCode.OK;
   }
- 
+
   private int clamp(int target, int min, int max) {
     return Math.max(min, Math.min(max, target));
   }
   public void setArmProfile(ArmPositions goalPosition, double velocity) {
-    _followingProfile =
-        true; 
+    _followingProfile = true;
     _goalPosition = goalPosition;
     double goalPosDeg = CTREConversion.falconToDegrees(_goalPosition.ticks,
                                                        ArmConfs.ARM_GEAR_RATIO);
-    TrapezoidProfile.State curState =
-        _profile.calculate( 
-            _timer.get()); 
+    TrapezoidProfile.State curState = _profile.calculate(_timer.get());
 
-    curState.position = CTREConversion.falconToDegrees(
-        getCurPosition(),
-        ArmConfs
-            .ARM_GEAR_RATIO);
+    curState.position = CTREConversion.falconToDegrees(getCurPosition(),
+                                                       ArmConfs.ARM_GEAR_RATIO);
 
     if (Math.abs(curState.position) > 360) {
       curState.position %= 360;
@@ -250,8 +237,7 @@ public class Arm extends SubsystemBase {
         //     _kinematicLimits[(int) curState.position][goalPosDeg][0],
         //     _kinematicLimits[(int) curState.position][goalPosDeg][1]
         // ),
-        new TrapezoidProfile.State(goalPosDeg, velocity),
-        curState); 
+        new TrapezoidProfile.State(goalPosDeg, velocity), curState);
     _prevVelocityDPS = curState.velocity;
     _timer.restart();
   }
@@ -260,25 +246,22 @@ public class Arm extends SubsystemBase {
     setArmProfile(goalPosition, 0.0);
   }
 
-  public void onDisable() { 
+  public void onDisable() {
     _followingProfile = false;
     _armMotor.setNeutralMode(ArmConfs.ARM_DISABLED_MODE);
 
     _profile = new TrapezoidProfile(
         new TrapezoidProfile.Constraints(ArmConfs.ARM_MAX_V_DPS,
                                          ArmConfs.ARM_MAX_ACC_DPSQ),
-        new TrapezoidProfile.State(0.0, 0.0)); 
+        new TrapezoidProfile.State(0.0, 0.0));
   }
 
   public void resetToAbsolute() {
-    double lastAngleDeg =
-        _armCanCoder
-            .getAbsolutePosition(); // getAbsolutePosition and getPosition return different vals
+    double lastAngleDeg = _armCanCoder.getAbsolutePosition();
     double absolutePosition =
         lastAngleDeg * (2048.0 / 360) * ArmConfs.ARM_GEAR_RATIO;
     _armMotor.setSelectedSensorPosition(absolutePosition);
     System.out.println("CANCODER POS" + _armCanCoder.getAbsolutePosition());
   }
-  public void disabledPeriodic() {
-  }
+  public void disabledPeriodic() {}
 }

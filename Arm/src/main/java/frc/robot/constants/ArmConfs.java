@@ -28,8 +28,8 @@ public class ArmConfs {
 
   public static final double ARM_KS_VOLTS = 0.0;
   public static final double ARM_KG_VOLTS = 0.13; 
-  public static final double ARM_KV_VOLTS_DPS = 0.53 * (Math.PI / 180);
-  public static final double ARM_KA_VOLTS_DPSQ = 0.0 * (Math.PI / 180);
+  public static final double ARM_KV_VOLTS_RADPS = 0.53;
+  public static final double ARM_KA_VOLTS_RADPSQ = 0.0;
 
   public static final double ARM_GEAR_RATIO = 32; 
 
